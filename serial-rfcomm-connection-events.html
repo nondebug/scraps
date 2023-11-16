@@ -1,0 +1,79 @@
+<html>
+<body>
+<script>
+const SERVICE_UUIDS = [
+    '3a046f6d-24d2-7655-6534-0d7ecb759709',  // Pixel Buds A-Series
+    '25e97ff7-24ce-4c4c-8951-f764a708f7b5',  // Pixel Buds Pro
+];
+
+var selectedPort = null;
+
+async function connect() {
+  try {
+    const port = await navigator.serial.requestPort(
+          {allowedBluetoothServiceClassIds:SERVICE_UUIDS,
+           filters: SERVICE_UUIDS.map(uuid => {
+                return { bluetoothServiceClassId: uuid };
+           })});
+  } catch (error) {
+    console.log(`requestPort error: ${error}`);
+    return;
+  }
+
+  const ports = await navigator.serial.getPorts();
+  selectedPort = ports.find(port => {
+    return SERVICE_UUIDS.includes(port.getInfo().bluetoothServiceClassId);
+  });
+  if (!window.selectedPort) {
+    console.log('no port with matching service class UUID');
+    return;
+  }
+  selectedPort.onconnect = console.log;
+  selectedPort.ondisconnect = console.log;
+
+  let connected = false;
+  while (true) {
+    // Open the port.
+    console.log('opening the port');
+    try {
+      await selectedPort.open({baudRate:9600});
+    } catch (error) {
+      console.log(`open error: ${error}`);
+      return;
+    }
+
+    // Read until the port is disconnected.
+    while (selectedPort.readable) {
+      const reader = selectedPort.readable.getReader();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (value && !connected) {
+            connected = true;
+            console.log('SERIAL PORT CONNECTED');
+          }
+          if (done) {
+            break;
+          }
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.message == 'The device has been lost.') {
+          connected = false;
+          console.log('SERIAL PORT DISCONNECTED');
+        } else {
+          console.log(`reader error: ${error}`);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+
+    // Close the port.
+    console.log('closing the port');
+    await selectedPort.close();
+  }
+}
+</script>
+<button onclick="connect()">Connect</button>
+</body>
+</html>
